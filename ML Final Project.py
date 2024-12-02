@@ -7,7 +7,7 @@ from sklearn.metrics import f1_score, precision_score, recall_score
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torchvision import models, transforms
+from torchvision import models
 from torchvision.models import ResNet18_Weights
 
 
@@ -53,7 +53,7 @@ def clean_dataset(raw_images_directory: str, classes: list[str]):
 
         # Get the class and subset of the image set
         img_set_tokens = filename.split("_")
-        img_class, img_subset = img_set_tokens[0], img_set_tokens[1][:-3]
+        img_class, img_subset = img_set_tokens[0], img_set_tokens[1][:-4]
 
         # If the .txt file is for a class not to be trained on, continue
         if img_class not in classes:
@@ -151,11 +151,7 @@ def create_dataloaders(img_path_label_pairs: list[tuple], batch_size: int):
     validation_set = []
 
     # Get the image at img_path and transform it to fit ResNet18's preferences
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),  # Resize the image to 224, 224
-        transforms.ToTensor(),  # Convert to PyTorch tensor
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize to ResNet18 prefs
-    ])
+    transform = ResNet18_Weights.IMAGENET1K_V1.transforms()
 
     # Determine whether each image belongs to training or validation
     for img_path, labels in img_path_label_pairs:
@@ -253,7 +249,7 @@ def train_model(model, train_loader: DataLoader, learning_rate: float):
 
 
 
-def validate_model(trained_model, val_loader: DataLoader, threshold: float = 0.5):
+def validate_model(trained_model, val_loader: DataLoader, threshold: float = 0.75):
     """
     Function that takes a trained model and a validation dataset and calculates some scores to justify the efficiency
     of the trained model.
@@ -295,15 +291,13 @@ def validate_model(trained_model, val_loader: DataLoader, threshold: float = 0.5
 
 
 
-def classify_image(trained_model, classes: list[str], img_path: str, target_size: tuple[int, int] = (224, 224),
-                   threshold: float = 0.5):
+def classify_image(trained_model, classes: list[str], img_path: str, threshold: float = 0.75):
     """
     Function that uses a trained model to make a prediction on an image
 
     :param trained_model: The trained model that will classify the image
     :param classes: All classes an image can be classified as
     :param img_path: Path to image to be classified
-    :param target_size: Dimensions to resize the image to: (224, 224) by default
     :param threshold: The belief requirement the model needs to have in a class in order to say it is present
     :return Those classes which the model has predicted to be present in the image
     """
@@ -311,11 +305,8 @@ def classify_image(trained_model, classes: list[str], img_path: str, target_size
     print("Classifying image...")
 
     # Transform the image into a PyTorch tensor that the ResNet18 model can work with
-    transform = transforms.Compose([
-        transforms.Resize(target_size),  # Resize the image
-        transforms.ToTensor(),  # Convert to PyTorch tensor
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize to ResNet18 preferences
-    ])
+    transform = ResNet18_Weights.IMAGENET1K_V1.transforms()
+
 
     # Open the image and transform it into a batch to allow the ResNet18 model to accept it
     with Image.open(img_path) as img:
@@ -351,6 +342,7 @@ def main(classes):
     # Initialize hyperparameters for training the model
     BATCH_SIZE = 32  # Number of images processed in a single batch
     LEARNING_RATE = 0.0001  # Strength of updating the weights
+    THRESHOLD = 0.75
 
     # Filter the VOC2012 Dataset to extract the data for the classes being tested
     clean_dataset(IMAGES_DIR, classes)
@@ -368,7 +360,7 @@ def main(classes):
     trained_model = train_model(new_model, train_loader, LEARNING_RATE)
 
     # Validate the model
-    validate_model(trained_model, val_loader)
+    validate_model(trained_model, val_loader, THRESHOLD)
 
     # Save the trained model
     path_to_model = "trained_model.pth"
@@ -400,4 +392,5 @@ if __name__ == "__main__":
 
     # Make a prediction using the model
     # REPLACE img_to_predict.jpg WITH ANY .jpg IMAGE OF YOUR CHOOSING
-    img_prediction = classify_image(classification_model, class_names, 'img_to_classify.jpg')
+    if os.path.exists("img_to_classify.jpg"):
+        img_prediction = classify_image(classification_model, class_names, 'img_to_classify.jpg')
